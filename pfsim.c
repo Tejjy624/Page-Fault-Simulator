@@ -5,7 +5,8 @@
 #include <string.h>
 #include <stdbool.h>
 
-#define MAX_SIZE 0xffff 
+#define MAX_SIZE 128
+#define BLOCK_SIZE 512 
 
 /* Page table entry */
 typedef struct{
@@ -18,7 +19,118 @@ typedef struct{
     bool        unavail;
     uint8_t     proc;
     uint16_t    vpn;
+    bool        referenced;
+    bool        dirty;
 }rme;
+
+pte PageTable[4][MAX_SIZE];
+rme FrameTable[32];
+int mem_access;
+int faults;
+int disk_access;
+int PM[32]={0};
+int PID, VPN, PFN;
+int OldPID, OldVPN;
+
+int getvpn(int n){
+    int a[16], i;
+    int rem, bin, dec = 0, base = 1;
+    char str[10];
+    int num;
+    for (i =0; n>0; i++){
+        a[i] = n%2;
+        n=n/2;
+    }
+    for (i = i-1; i>=9; i--){
+        num = a[i];
+        sprintf(str,"%s%d", str, num);
+    }
+    bin = atoi(str);
+    while(bin){
+        rem = bin % 10;
+        dec = dec + rem * base;
+        bin = bin/10;
+        base = base * 2;
+    }
+    return dec;
+}
+
+void evict(){
+    //Unreferenced page with dirty off
+    for (int i = 0; i<32; i++){
+        if (FrameTable[i].referenced == 0 && FrameTable[i].dirty == 0){
+            //Modify original PTE
+            OldPID = FrameTable[i].proc;
+            OldVPN = FrameTable[i].vpn;
+            PageTable[OldPID][OldVPN].valid = 0;
+
+            //Modify FrameTable with new values
+            FrameTable[i].proc = PID;
+            FrameTable[i].vpn = VPN;
+            FrameTable[i].unavail = 1;
+            FrameTable[i].referenced = 1;
+            PageTable[PID][VPN].valid = 1;
+            PageTable[PID][VPN].pfn = i;
+            return;
+        }
+    }
+    //unreferenced page with dirty on
+    for (int i = 0; i<32; i++){
+        if (FrameTable[i].referenced == 0 && FrameTable[i].dirty == 1){
+            //Modify original PTE
+            OldPID = FrameTable[i].proc;
+            OldVPN = FrameTable[i].vpn;
+            PageTable[OldPID][OldVPN].valid = 0;
+
+            //Modify FrameTable with new values
+            FrameTable[i].proc = PID;
+            FrameTable[i].vpn = VPN;
+            FrameTable[i].unavail = 1;
+            FrameTable[i].referenced = 1;
+            PageTable[PID][VPN].valid = 1;
+            PageTable[PID][VPN].pfn = i;
+            disk_access++;
+            return;
+        }
+    }
+    //referenced page with dirty off
+    for (int i = 0; i<32; i++){
+        if (FrameTable[i].referenced == 1 && FrameTable[i].dirty == 0){
+            //Modify original PTE
+            OldPID = FrameTable[i].proc;
+            OldVPN = FrameTable[i].vpn;
+            PageTable[OldPID][OldVPN].valid = 0;
+
+            //Modify FrameTable with new values
+            FrameTable[i].proc = PID;
+            FrameTable[i].vpn = VPN;
+            FrameTable[i].unavail = 1;
+            FrameTable[i].referenced = 1;
+            PageTable[PID][VPN].valid = 1;
+            PageTable[PID][VPN].pfn = i;
+            return;
+        }
+    }
+    //referenced page with dirty on
+    for (int i = 0; i<32; i++){
+        if (FrameTable[i].referenced == 1 && FrameTable[i].dirty == 1){
+            //Modify original PTE
+            OldPID = FrameTable[i].proc;
+            OldVPN = FrameTable[i].vpn;
+            PageTable[OldPID][OldVPN].valid = 0;
+
+            //Modify FrameTable with new values
+            FrameTable[i].proc = PID;
+            FrameTable[i].vpn = VPN;
+            FrameTable[i].unavail = 1;
+            FrameTable[i].referenced = 1;
+            PageTable[PID][VPN].valid = 1;
+            PageTable[PID][VPN].pfn = i;
+            disk_access++;
+            return;
+        }
+    }
+}
 
 int main(int argc, char *argv[]){
     FILE *fp;
@@ -29,14 +141,8 @@ int main(int argc, char *argv[]){
     char pid[2];
     char hex[7];
     char TYPE[2];
-    int PID;
-    int VPN;
-    int disk_access;
-    //int faults;
-    //int page_access;
-    pte PageTable[MAX_SIZE];
 
-
+    int temp;
     //check if file arguement is passed
     if (argc < 2){
         printf("Usage: ref_pfsim <file>\n");
@@ -46,34 +152,59 @@ int main(int argc, char *argv[]){
     }
     //open file
     fp = fopen(filename, "r");
-    while (1){
-        while((read = getline(&line, &len, fp)) != -1){
-            //Read line into 3 variables
-            strncpy(pid, line, 1);
-            pid[2] = '\0';
-            PID = (int)strtol(pid, NULL, 0);
-            strncpy(hex, line + 2, 6);
-            hex[7] = '\0';
-            VPN = (int)strtol(hex, NULL, 0);
-            strncpy(TYPE, line + 9, 1);
-            TYPE[2] = '\0';
-            if (PID == 0){
-                printf("Found");
-                PageTable[VPN];
-            }
-            //Create page table entry for VPN
-            
 
-            printf("%d", PID);
-            printf("%d", VPN);
-            //printf("%s\n", TYPE);
-            //printf("%s\n", line);
+    while((read = getline(&line, &len, fp)) != -1){
+        //Read line into 3 variables
+        strncpy(pid, line, 1);
+        pid[2] = '\0';
+        PID = (int)strtol(pid, NULL, 0);
+        strncpy(hex, line + 2, 6);
+        hex[7] = '\0';
+        temp = strtol(hex, NULL, 0);
+        VPN = getvpn(temp);
+        strncpy(TYPE, line + 9, 1);
+        TYPE[1] = '\0';
+
+        if (mem_access == 200){
+            for (int i = 0; i<32; i++){
+                FrameTable[i].referenced = 0;
+            }
+        }
+        //Locate page table entry for VPN
+        if (PageTable[PID][VPN].valid == 1){
+            PFN = PageTable[PID][VPN].pfn;
+            if (strcmp(TYPE,"W") == 0){
+                FrameTable[PFN].dirty = 1;
+                printf("d");
+            }
+            mem_access++;
+        } else if (PageTable[PID][VPN].valid == 0){
+            //Page Fault
+            
+            //Find a free frame
+            for (int i = 0; i <32; i++){
+                if (FrameTable[i].unavail == 0){
+                    FrameTable[i].unavail = 1;
+                    FrameTable[i].proc = PID;
+                    FrameTable[i].vpn = VPN;
+                    FrameTable[i].referenced = 1;
+                    PageTable[PID][VPN].valid = 1;
+                    PageTable[PID][VPN].pfn = i;
+                    if (strcmp(TYPE,"W") == 0){
+                        FrameTable[i].dirty = 1;
+                    }
+                    break;
+                }else{
+                    //evict();
+                }
+            } 
+            mem_access++;
+            faults++;
             disk_access++;
         }
-        break;
     }
     fclose(fp);
-    //printf("\nPage accesses: %d", page_access);
-    //printf("\nPage Faults: %d", faults);
-    //printf("\nDisk accesses: %d", disk_access);
+    printf("Page accesses: %d\n", mem_access);
+    printf("Page Faults: %d\n", faults);
+    printf("Disk accesses: %d\n", disk_access);
 }
