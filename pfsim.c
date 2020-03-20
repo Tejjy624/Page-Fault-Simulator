@@ -220,6 +220,6 @@ int main(int argc, char *argv[]){
     }
     fclose(fp);
     printf("Page accesses: %d\n", mem_access);
-    printf("Page Faults: %d\n", faults);
+    printf("Page faults: %d\n", faults);
     printf("Disk accesses: %d\n", disk_access);
 }
