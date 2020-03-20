@@ -1,24 +1,9 @@
-# Target library
-lib 	:= pfsim.a
-objs 	:= pfsim.o
+CC = gcc
+CFLAGS = -Wall -Werror #-Wextra
 
-CC 		:= gcc
-AR 		:= ar
-CFLAGS 	:= -Wall -Wextra -g #-Werror
-ARFLAGS := rcs
+all: pfsim
+pfsim: pfsim.o
+pfsim.o: pfsim.c
 
-ifneq ($(V), 1)
-Q = @
-endif
-
-all: $(lib)
-
-$(lib): $(objs)
-	@echo "AR $@"
-	$(Q) $(AR) $(ARFLAGS) $@ $^
-%.o: %.c %.h
-	@echo "CC $@"
-	$(Q) $(CC) $(CFLAGS) -c -o $@ $<
 clean:
-	@echo "CLEAN"
-	$(Q) rm $(objs) *.a
+	rm -f pfsim pfsim.o
