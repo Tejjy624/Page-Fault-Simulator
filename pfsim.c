@@ -59,46 +59,63 @@ int getvpn(int n){
     return dec;
 }
 
-void evict(){
+void fault(){
+    //Find a new frame
+    for (int i=0; i<32; i++){
+        if (FrameTable[i].unavail == 0){
+            FrameTable[i].unavail = 1;
+            FrameTable[i].proc = PID;
+            FrameTable[i].vpn = VPN;
+            FrameTable[i].referenced = 1;
+            PageTable[PID][VPN].valid = 1;
+            PageTable[PID][VPN].pfn = i;
+            if (strcmp(TYPE,"W") == 0){
+                FrameTable[i].dirty = 1;
+            }
+            return;
+        }
+    }
     //Unreferenced page with dirty off
     for (int i = 0; i<32; i++){
-        if (FrameTable[i].referenced == 0){
-            if (FrameTable[i].dirty == 0){
-                //Modify original PTE
-                OldPID = FrameTable[i].proc;
-                OldVPN = FrameTable[i].vpn;
-                PageTable[OldPID][OldVPN].valid = 0;
-
-                //Modify FrameTable with new values
-                FrameTable[i].proc = PID;
-                FrameTable[i].vpn = VPN;
-                FrameTable[i].unavail = 1;
-                FrameTable[i].referenced = 1;
-                PageTable[PID][VPN].valid = 1;
-                PageTable[PID][VPN].pfn = i;
-                return;
+        if (FrameTable[i].referenced == 0 && FrameTable[i].dirty == 0){
+            //Modify original PTE
+            OldPID = FrameTable[i].proc;
+            OldVPN = FrameTable[i].vpn;
+            PageTable[OldPID][OldVPN].valid = 0;
+            //Modify FrameTable with new values
+            FrameTable[i].proc = PID;
+            FrameTable[i].vpn = VPN;
+            FrameTable[i].unavail = 1;
+            FrameTable[i].referenced = 1;
+            PageTable[PID][VPN].valid = 1;
+            PageTable[PID][VPN].pfn = i;
+            if (strcmp(TYPE,"W") == 0){
+                FrameTable[i].dirty = 1;
             }
+            return;
         }
     }
     //unreferenced page with dirty on
     for (int i = 0; i<32; i++){
-        if (FrameTable[i].referenced == 0){
-            if (FrameTable[i].dirty == 1){
-                //Modify original PTE
-                OldPID = FrameTable[i].proc;
-                OldVPN = FrameTable[i].vpn;
-                PageTable[OldPID][OldVPN].valid = 0;
+        if (FrameTable[i].referenced == 0 && FrameTable[i].dirty == 1){
+            //Modify original PTE
+            OldPID = FrameTable[i].proc;
+            OldVPN = FrameTable[i].vpn;
+            PageTable[OldPID][OldVPN].valid = 0;
 
-                //Modify FrameTable with new values
-                FrameTable[i].proc = PID;
-                FrameTable[i].vpn = VPN;
-                FrameTable[i].unavail = 1;
-                FrameTable[i].referenced = 1;
-                PageTable[PID][VPN].valid = 1;
-                PageTable[PID][VPN].pfn = i;
-                disk_access++;
-                return;
+            //Modify FrameTable with new values
+            FrameTable[i].proc = PID;
+            FrameTable[i].vpn = VPN;
+            FrameTable[i].unavail = 1;
+            FrameTable[i].referenced = 1;
+            PageTable[PID][VPN].valid = 1;
+            PageTable[PID][VPN].pfn = i;
+            FrameTable[i].dirty = 0;
+            if (strcmp(TYPE,"W") == 0){
+                FrameTable[i].dirty = 1;
             }
+            disk_access++;
+            return;
         }
     }
     //referenced page with dirty off
@@ -108,7 +125,6 @@ void evict(){
             OldPID = FrameTable[i].proc;
             OldVPN = FrameTable[i].vpn;
             PageTable[OldPID][OldVPN].valid = 0;
-
             //Modify FrameTable with new values
             FrameTable[i].proc = PID;
             FrameTable[i].vpn = VPN;
@@ -116,6 +132,9 @@ void evict(){
             FrameTable[i].referenced = 1;
             PageTable[PID][VPN].valid = 1;
             PageTable[PID][VPN].pfn = i;
+            if (strcmp(TYPE,"W") == 0){
+                FrameTable[i].dirty = 1;
+            }
             return;
         }
     }
@@ -124,6 +143,7 @@ void evict(){
         if (FrameTable[i].referenced == 1 && FrameTable[i].dirty == 1){
             //Modify original PTE
             OldPID = FrameTable[i].proc;
+            
             OldVPN = FrameTable[i].vpn;
             PageTable[OldPID][OldVPN].valid = 0;
 
@@ -134,6 +154,10 @@ void evict(){
             FrameTable[i].referenced = 1;
             PageTable[PID][VPN].valid = 1;
             PageTable[PID][VPN].pfn = i;
+            FrameTable[i].dirty = 0;
+            if (strcmp(TYPE,"W") == 0){
+                FrameTable[i].dirty = 1;
+            }
             disk_access++;
             return;
         }
@@ -168,49 +192,31 @@ int main(int argc, char *argv[]){
         strncpy(TYPE, line + 9, 1);
         TYPE[1] = '\0';
 
-        if (count == 200){
-            for (int i = 0; i<32; i++){
-                if (FrameTable[i].referenced == 1){
-                    FrameTable[i].referenced = 0;
-                }
-            }
-            count = 0;
-        }
 
         //Locate page table entry for VPN
-        if (PageTable[PID][VPN].valid != 1){
-            //Page Fault
-            faults++;
-            //Find a free frame
-            for (int i = 0; i <32; i++){
-                if (FrameTable[i].unavail == 0){
-                    disk_access++;
-                    FrameTable[i].unavail = 1;
-                    FrameTable[i].proc = PID;
-                    FrameTable[i].vpn = VPN;
-                    FrameTable[i].referenced = 1;
-                    PageTable[PID][VPN].valid = 1;
-                    PageTable[PID][VPN].pfn = i;
-                    if (strcmp(TYPE,"W") == 0){
-                        FrameTable[i].dirty = 1;
-                    }
-                    break;
-                }else{
-                    disk_access++;
-                    evict();
-                    break;
-                }
-            }
-        }
         if (PageTable[PID][VPN].valid == 1){
             PFN = PageTable[PID][VPN].pfn;
             FrameTable[PFN].referenced = 1;
+            FrameTable[PFN].proc = PID;
+            FrameTable[PFN].vpn = VPN;
             if (strcmp(TYPE,"W") == 0){
                 FrameTable[PFN].dirty = 1;
             }
+        }else {
+            //Page Fault
+            faults++;
+            disk_access++;
+            //Find a frame
+            fault();
         }
         count++;
         mem_access++;
+        if (count == 200){
+            for (int i = 0; i<32; i++){
+                FrameTable[i].referenced = 0;
+            }
+            count = 0;
+        }
     }
     fclose(fp);
     printf("Page accesses: %d\n", mem_access);
